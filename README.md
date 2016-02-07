@@ -22,14 +22,21 @@ See SatoshiLabs' blog post about this feature:
 
 ## Installation
 
-First, make sure that the latest `trezorlib` Python package
-is installed correctly (at least v0.6.6):
+Install trezor-agent and it's dependencies into a virtualenv:
 
-	$ pip install Cython trezor
+	pip install virtualenvwrapper
 
-Then, install the latest `trezor_agent` package:
+	mkvirtualenv trezor-agent
+	pip install --upgrade setuptools
+	pip install --upgrade pip
+	pip install Cython "trezor>=0.6.6"
 
-	$ pip install trezor_agent
+	pip install -e git+https://github.com/WyseNynja/trezor-agent.git#egg=trezor_agent
+	mkdir ~/bin
+	ln -sfv $WORKON_HOME/trezor-agent/bin/trezorctl ~/bin/
+	ln -sfv $WORKON_HOME/trezor-agent/bin/trezor-agent ~/bin/
+
+Make sure ~/bin is on your PATH.
 
 Finally, verify that you are running the latest TREZOR firmware version (at least v1.3.4):
 
@@ -42,17 +49,20 @@ Finally, verify that you are running the latest TREZOR firmware version (at leas
 
 ## Public key generation
 
+Add an environment variable to your ~/.bash_profile, ~/.zshrc, or whatever:
+
+	$ export TREZOR_SSH_IDENTITY=username@trezorname.trezor
+
 Run:
 
-	/tmp $ trezor-agent ssh.hostname.com -v > hostname.pub
+	$ trezor-agent ssh.hostname.com -v > ${TREZOR_SSH_IDENTITY}.pub
 	2015-09-02 15:03:18,929 INFO         getting "ssh://ssh.hostname.com" public key from Trezor...
 	2015-09-02 15:03:23,342 INFO         disconnected from Trezor
-	/tmp $ cat hostname.pub
-	ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBGSevcDwmT+QaZPUEWUUjTeZRBICChxMKuJ7dRpBSF8+qt+8S1GBK5Zj8Xicc8SHG/SE/EXKUL2UU3kcUzE7ADQ= ssh://ssh.hostname.com
 
-Append `hostname.pub` contents to `~/.ssh/authorized_keys`
-configuration file at `ssh.hostname.com`, so the remote server
-would allow you to login using the corresponding private key signature.
+	$ cat ${TREZOR_SSH_IDENTITY}.pub
+	ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBGSevcDwmT+QaZPUEWUUjTeZRBICChxMKuJ7dRpBSF8+qt+8S1GBK5Zj8Xicc8SHG/SE/EXKUL2UU3kcUzE7ADQ= ssh://${TREZOR_SSH_IDENTITY}
+
+Append `${TREZOR_SSH_IDENTITY}.pub` contents to `~/.ssh/authorized_keys` configuration file at `ssh.hostname.com` or any other server to allow you to login using the corresponding private key signature.
 
 ## Usage
 

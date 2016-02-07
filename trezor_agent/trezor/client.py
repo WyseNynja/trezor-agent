@@ -1,6 +1,7 @@
 import binascii
 import io
 import logging
+import os
 import re
 import struct
 
@@ -30,6 +31,9 @@ class Client(object):
         self.client.close()
 
     def get_identity(self, label, index=0):
+        # override the given label with an environment variable if it is set
+        label = os.environ.get('TREZOR_SSH_IDENTITY', label)
+
         identity = string_to_identity(label, self.identity_type)
         identity.proto = 'ssh'
         identity.index = index
