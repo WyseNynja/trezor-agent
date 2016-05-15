@@ -59,7 +59,7 @@ Finally, verify that you are running the latest [TREZOR firmware](https://mytrez
 
 Add an environment variable to your ~/.bash_profile, ~/.zshrc, or whatever:
 
-	$ export TREZOR_SSH_IDENTITY=username@trezorname.trezor
+	$ export TREZOR_SSH_IDENTITY=john@doe.bit
 
 Run:
 
