@@ -1,9 +1,9 @@
 import io
 
 import mock
+import pytest
 
-from .. import formats, util
-from ..trezor import client, factory
+from .. import client, factory, formats, util
 
 ADDR = [2147483661, 2810943954, 3938368396, 3454558782, 3848009040]
 CURVE = 'nist256p1'
@@ -53,7 +53,8 @@ def identity_type(**kwargs):
 def load_client():
     return factory.ClientWrapper(connection=FakeConnection(),
                                  identity_type=identity_type,
-                                 device_name='DEVICE_NAME')
+                                 device_name='DEVICE_NAME',
+                                 call_exception=Exception)
 
 
 BLOB = (b'\x00\x00\x00 \xce\xe0\xc9\xd5\xceu/\xe8\xc5\xf2\xbfR+x\xa1\xcf\xb0'
@@ -86,8 +87,10 @@ def test_ssh_agent():
 
         def ssh_sign_identity(identity, challenge_hidden,
                               challenge_visual, ecdsa_curve_name):
+            assert (client.identity_to_string(identity) ==
+                    client.identity_to_string(ident))
             assert challenge_hidden == BLOB
-            assert challenge_visual == identity.path
+            assert challenge_visual == 'VISUAL'
             assert ecdsa_curve_name == b'nist256p1'
 
             result = mock.Mock(spec=[])
@@ -96,7 +99,8 @@ def test_ssh_agent():
             return result
 
         c.client.sign_identity = ssh_sign_identity
-        signature = c.sign_ssh_challenge(label=label, blob=BLOB)
+        signature = c.sign_ssh_challenge(label=label, blob=BLOB,
+                                         visual='VISUAL')
 
         key = formats.import_public_key(PUBKEY_TEXT)
         serialized_sig = key['verifier'](sig=signature, msg=BLOB)
@@ -108,6 +112,17 @@ def test_ssh_agent():
         assert r[:1] == b'\x00'
         assert s[:1] == b'\x00'
         assert r[1:] + s[1:] == SIG[1:]
+
+        c.client.call_exception = ValueError
+
+        # pylint: disable=unused-argument
+        def cancel_sign_identity(identity, challenge_hidden,
+                                 challenge_visual, ecdsa_curve_name):
+            raise c.client.call_exception(42, 'ERROR')
+
+        c.client.sign_identity = cancel_sign_identity
+        with pytest.raises(IOError):
+            c.sign_ssh_challenge(label=label, blob=BLOB, visual='VISUAL')
 
 
 def test_utils():

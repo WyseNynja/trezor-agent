@@ -22,6 +22,12 @@ def test_list():
     assert reply == LIST_NIST256_REPLY
 
 
+def test_unsupported():
+    h = protocol.Handler(keys=[], signer=None)
+    reply = h.handle(b'\x09')
+    assert reply == b'\x00\x00\x00\x01\x05'
+
+
 def ecdsa_signer(label, blob):
     assert label == 'ssh://localhost'
     assert blob == NIST256_BLOB
@@ -38,7 +44,7 @@ def test_ecdsa_sign():
 def test_sign_missing():
     h = protocol.Handler(keys=[], signer=ecdsa_signer)
 
-    with pytest.raises(protocol.MissingKey):
+    with pytest.raises(KeyError):
         h.handle(NIST256_SIGN_MSG)
 
 
@@ -51,8 +57,18 @@ def test_sign_wrong():
     key = formats.import_public_key(NIST256_KEY)
     h = protocol.Handler(keys=[key], signer=wrong_signature)
 
-    with pytest.raises(protocol.BadSignature):
+    with pytest.raises(ValueError):
         h.handle(NIST256_SIGN_MSG)
+
+
+def test_sign_cancel():
+    def cancel_signature(label, blob):  # pylint: disable=unused-argument
+        raise IOError()
+
+    key = formats.import_public_key(NIST256_KEY)
+    h = protocol.Handler(keys=[key], signer=cancel_signature)
+
+    assert h.handle(NIST256_SIGN_MSG) == protocol.failure()
 
 
 ED25519_KEY = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFBdF2tjfSO8nLIi736is+f0erq28RTc7CkM11NZtTKR ssh://localhost'  # nopep8

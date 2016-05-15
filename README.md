@@ -6,7 +6,6 @@
 [![Development Status](https://img.shields.io/pypi/status/trezor_agent.svg)](https://pypi.python.org/pypi/trezor_agent/)
 [![Downloads](https://img.shields.io/pypi/dm/trezor_agent.svg)](https://pypi.python.org/pypi/trezor_agent/)
 [![Chat](https://badges.gitter.im/romanz/trezor-agent.svg)](https://gitter.im/romanz/trezor-agent)
-[![License](https://img.shields.io/github/license/romanz/trezor-agent.svg)](https://github.com/romanz/trezor-agent/blob/master/LICENSE)
 
 See SatoshiLabs' blog post about this feature:
 
@@ -20,9 +19,16 @@ See SatoshiLabs' blog post about this feature:
 ### Advanced usage (multiple SSH sessions from a sub-shell)
 [![Subshell](https://asciinema.org/a/33240.png)](https://asciinema.org/a/33240)
 
+### Using for GitHub SSH authentication (via `trezor-git` utility)
+[![GitHub](https://asciinema.org/a/38337.png)](https://asciinema.org/a/38337)
+
 ## Installation
 
-Install trezor-agent and it's dependencies into a virtualenv:
+To install dependencies on Debian/Ubuntu:
+
+	sudo apt-get install python-dev libusb-1.0-0-dev libudev-dev
+
+Install trezor-agent (at least v0.6.6) and it's dependencies into a virtualenv:
 
 	pip install virtualenvwrapper
 
@@ -31,14 +37,16 @@ Install trezor-agent and it's dependencies into a virtualenv:
 	pip install --upgrade pip
 	pip install Cython "trezor>=0.6.6"
 
+Then, install the latest [trezor_agent](https://pypi.python.org/pypi/trezor_agent) package:
+
 	pip install -e git+https://github.com/WyseNynja/trezor-agent.git#egg=trezor_agent
-	mkdir ~/bin
+	mkdir -p ~/bin
 	ln -sfv $WORKON_HOME/trezor-agent/bin/trezorctl ~/bin/
 	ln -sfv $WORKON_HOME/trezor-agent/bin/trezor-agent ~/bin/
 
 Make sure ~/bin is on your PATH.
 
-Finally, verify that you are running the latest TREZOR firmware version (at least v1.3.4):
+Finally, verify that you are running the latest [TREZOR firmware](https://mytrezor.com/data/firmware/releases.json) version (at least v1.3.4):
 
 	$ trezorctl get_features
 	vendor: "bitcointrezor.com"
@@ -61,7 +69,7 @@ Run:
 	    7 8 9
 	    4 5 6
 	    1 2 3
-	Please enter current PIN: 
+	Please enter current PIN:
 
 	2015-09-02 15:03:23,342 INFO         disconnected from Trezor
 

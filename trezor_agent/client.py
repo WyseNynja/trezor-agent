@@ -1,3 +1,8 @@
+"""
+Connection to hardware authentication device.
+
+It is used for getting SSH public keys and ECDSA signing of server requests.
+"""
 import binascii
 import io
 import logging
@@ -5,33 +10,40 @@ import os
 import re
 import struct
 
-from . import factory
-from .. import formats, util
+from . import factory, formats, util
 
 log = logging.getLogger(__name__)
 
 
 class Client(object):
+    """Client wrapper for SSH authentication device."""
 
     def __init__(self, loader=factory.load, curve=formats.CURVE_NIST256):
+        """Connect to hardware device."""
         client_wrapper = loader()
         self.client = client_wrapper.connection
         self.identity_type = client_wrapper.identity_type
         self.device_name = client_wrapper.device_name
+        self.call_exception = client_wrapper.call_exception
         self.curve = curve
 
     def __enter__(self):
+        """Start a session, and test connection."""
         msg = 'Hello World!'
         assert self.client.ping(msg) == msg
         return self
 
     def __exit__(self, *args):
+        """Forget PIN, shutdown screen and disconnect."""
         log.info('disconnected from %s', self.device_name)
-        self.client.clear_session()  # forget PIN and shutdown screen
+        self.client.clear_session()
         self.client.close()
 
     def get_identity(self, label, index=0):
+        """Parse label string into Identity protobuf."""
         # override the given label with an environment variable if it is set
+        # todo: explain how much easier key management is like this
+        # todo: change it to TREZOR_IDENTITY and make it work for GPG, too
         label = os.environ.get('TREZOR_SSH_IDENTITY', label)
 
         identity = string_to_identity(label, self.identity_type)
@@ -40,11 +52,12 @@ class Client(object):
         return identity
 
     def get_public_key(self, label):
+        """Get SSH public key corresponding to specified by label."""
         identity = self.get_identity(label=label)
         label = identity_to_string(identity)  # canonize key label
         log.info('getting "%s" public key (%s) from %s...',
                  label, self.curve, self.device_name)
-        addr = _get_address(identity)
+        addr = get_address(identity)
         node = self.client.get_public_node(n=addr,
                                            ecdsa_curve_name=self.curve)
 
@@ -52,22 +65,29 @@ class Client(object):
         vk = formats.decompress_pubkey(pubkey=pubkey, curve_name=self.curve)
         return formats.export_public_key(vk=vk, label=label)
 
-    def sign_ssh_challenge(self, label, blob):
+    def sign_ssh_challenge(self, label, blob, visual=''):
+        """Sign given blob using a private key, specified by the label."""
         identity = self.get_identity(label=label)
         msg = _parse_ssh_blob(blob)
         log.debug('%s: user %r via %r (%r)',
                   msg['conn'], msg['user'], msg['auth'], msg['key_type'])
         log.debug('nonce: %s', binascii.hexlify(msg['nonce']))
         log.debug('fingerprint: %s', msg['public_key']['fingerprint'])
+        log.debug('hidden challenge size: %d bytes', len(blob))
+        log.debug('visual challenge size: %d bytes = %r', len(visual), visual)
 
         log.info('please confirm user "%s" login to "%s" using %s...',
                  msg['user'], label, self.device_name)
 
-        visual = identity.path  # not signed when proto='ssh'
-        result = self.client.sign_identity(identity=identity,
-                                           challenge_hidden=blob,
-                                           challenge_visual=visual,
-                                           ecdsa_curve_name=self.curve)
+        try:
+            result = self.client.sign_identity(identity=identity,
+                                               challenge_hidden=blob,
+                                               challenge_visual=visual,
+                                               ecdsa_curve_name=self.curve)
+        except self.call_exception as e:
+            code, msg = e.args
+            log.warning('%s error #%s: %s', self.device_name, code, msg)
+            raise IOError(msg)  # close current connection, keep server open
 
         verifying_key = formats.decompress_pubkey(pubkey=result.public_key,
                                                   curve_name=self.curve)
@@ -92,6 +112,7 @@ _identity_regexp = re.compile(''.join([
 
 
 def string_to_identity(s, identity_type):
+    """Parse string into Identity protobuf."""
     m = _identity_regexp.match(s)
     result = m.groupdict()
     log.debug('parsed identity: %s', result)
@@ -100,6 +121,7 @@ def string_to_identity(s, identity_type):
 
 
 def identity_to_string(identity):
+    """Dump Identity protobuf into its string representation."""
     result = []
     if identity.proto:
         result.append(identity.proto + '://')
@@ -113,7 +135,8 @@ def identity_to_string(identity):
     return ''.join(result)
 
 
-def _get_address(identity):
+def get_address(identity):
+    """Compute BIP32 derivation address for SignIdentity API."""
     index = struct.pack('<L', identity.index)
     addr = index + identity_to_string(identity).encode('ascii')
     log.debug('address string: %r', addr)
@@ -129,11 +152,11 @@ def _parse_ssh_blob(data):
     res = {}
     i = io.BytesIO(data)
     res['nonce'] = util.read_frame(i)
-    i.read(1)  # TBD
+    i.read(1)  # SSH2_MSG_USERAUTH_REQUEST == 50 (from ssh2.h, line 108)
     res['user'] = util.read_frame(i)
     res['conn'] = util.read_frame(i)
     res['auth'] = util.read_frame(i)
-    i.read(1)  # TBD
+    i.read(1)  # have_sig == 1 (from sshconnect2.c, line 1056)
     res['key_type'] = util.read_frame(i)
     public_key = util.read_frame(i)
     res['public_key'] = formats.parse_pubkey(public_key)

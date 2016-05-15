@@ -41,15 +41,22 @@ def test_handle():
     conn = FakeSocket()
     server.handle_connection(conn, handler)
 
-    msg = bytearray([protocol.SSH_AGENTC_REQUEST_RSA_IDENTITIES])
+    msg = bytearray([protocol.msg_code('SSH_AGENTC_REQUEST_RSA_IDENTITIES')])
     conn = FakeSocket(util.frame(msg))
     server.handle_connection(conn, handler)
     assert conn.tx.getvalue() == b'\x00\x00\x00\x05\x02\x00\x00\x00\x00'
 
-    msg = bytearray([protocol.SSH2_AGENTC_REQUEST_IDENTITIES])
+    msg = bytearray([protocol.msg_code('SSH2_AGENTC_REQUEST_IDENTITIES')])
     conn = FakeSocket(util.frame(msg))
     server.handle_connection(conn, handler)
     assert conn.tx.getvalue() == b'\x00\x00\x00\x05\x0C\x00\x00\x00\x00'
+
+    msg = bytearray([protocol.msg_code('SSH2_AGENTC_ADD_IDENTITY')])
+    conn = FakeSocket(util.frame(msg))
+    server.handle_connection(conn, handler)
+    conn.tx.seek(0)
+    reply = util.read_frame(conn.tx)
+    assert reply == util.pack('B', protocol.msg_code('SSH_AGENT_FAILURE'))
 
     conn_mock = mock.Mock(spec=FakeSocket)
     conn_mock.recv.side_effect = [Exception, EOFError]
@@ -71,7 +78,7 @@ def test_server_thread():
         def getsockname(self):  # pylint: disable=no-self-use
             return 'fake_server'
 
-    server.server_thread(server=FakeServer(),
+    server.server_thread(sock=FakeServer(),
                          handler=protocol.Handler(keys=[], signer=None),
                          quit_event=quit_event)
 
@@ -91,10 +98,8 @@ def test_spawn():
 def test_run():
     assert server.run_process(['true'], environ={}) == 0
     assert server.run_process(['false'], environ={}) == 1
-    assert server.run_process(
-        command='exit $X',
-        environ={'X': '42'},
-        use_shell=True) == 42
+    assert server.run_process(command=['bash', '-c', 'exit $X'],
+                              environ={'X': '42'}) == 42
 
     with pytest.raises(OSError):
         server.run_process([''], environ={})
