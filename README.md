@@ -56,7 +56,13 @@ Add an environment variable to your ~/.bash_profile, ~/.zshrc, or whatever:
 Run:
 
 	$ trezor-agent ssh.hostname.com -v > ${TREZOR_SSH_IDENTITY}.pub
-	2015-09-02 15:03:18,929 INFO         getting "ssh://ssh.hostname.com" public key from Trezor...
+	2015-09-02 15:03:18,929 INFO         getting "ssh://${TREZOR_SSH_IDENTITY}" public key (nist256p1) from Trezor...
+	Use the numeric keypad to describe number positions. The layout is:
+	    7 8 9
+	    4 5 6
+	    1 2 3
+	Please enter current PIN: 
+
 	2015-09-02 15:03:23,342 INFO         disconnected from Trezor
 
 	$ cat ${TREZOR_SSH_IDENTITY}.pub
@@ -69,7 +75,7 @@ Append `${TREZOR_SSH_IDENTITY}.pub` contents to `~/.ssh/authorized_keys` configu
 Run:
 
 	/tmp $ trezor-agent ssh.hostname.com -v -c
-	2015-09-02 15:09:39,782 INFO         getting "ssh://ssh.hostname.com" public key from Trezor...
+	2015-09-02 15:09:39,782 INFO         getting "ssh://${TREZOR_SSH_IDENTITY}" public key (nist256p1) from Trezor...
 	2015-09-02 15:09:44,430 INFO         please confirm user "roman" login to "ssh://ssh.hostname.com" using Trezor...
 	2015-09-02 15:09:46,152 INFO         signature status: OK
 	Linux lmde 3.16.0-4-amd64 #1 SMP Debian 3.16.7-ckt11-1+deb8u3 (2015-08-04) x86_64
