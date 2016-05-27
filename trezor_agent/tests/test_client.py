@@ -29,7 +29,7 @@ class FakeConnection(object):
     def get_public_node(self, n, ecdsa_curve_name=b'secp256k1'):
         assert not self.closed
         assert n == ADDR
-        assert ecdsa_curve_name in {b'secp256k1', b'nist256p1'}
+        assert ecdsa_curve_name in {'secp256k1', 'nist256p1'}
         result = mock.Mock(spec=[])
         result.node = mock.Mock(spec=[])
         result.node.public_key = PUBKEY
@@ -90,8 +90,8 @@ def test_ssh_agent():
             assert (client.identity_to_string(identity) ==
                     client.identity_to_string(ident))
             assert challenge_hidden == BLOB
-            assert challenge_visual == 'VISUAL'
-            assert ecdsa_curve_name == b'nist256p1'
+            assert challenge_visual == ''
+            assert ecdsa_curve_name == 'nist256p1'
 
             result = mock.Mock(spec=[])
             result.public_key = PUBKEY
@@ -99,8 +99,7 @@ def test_ssh_agent():
             return result
 
         c.client.sign_identity = ssh_sign_identity
-        signature = c.sign_ssh_challenge(label=label, blob=BLOB,
-                                         visual='VISUAL')
+        signature = c.sign_ssh_challenge(label=label, blob=BLOB)
 
         key = formats.import_public_key(PUBKEY_TEXT)
         serialized_sig = key['verifier'](sig=signature, msg=BLOB)
@@ -122,7 +121,7 @@ def test_ssh_agent():
 
         c.client.sign_identity = cancel_sign_identity
         with pytest.raises(IOError):
-            c.sign_ssh_challenge(label=label, blob=BLOB, visual='VISUAL')
+            c.sign_ssh_challenge(label=label, blob=BLOB)
 
 
 def test_utils():

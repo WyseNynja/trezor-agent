@@ -5,7 +5,6 @@ import hashlib
 import io
 import logging
 import struct
-import subprocess
 
 import ecdsa
 import ed25519
@@ -39,6 +38,11 @@ def parse_mpi(s):
     bits = s.readfmt('>H')
     blob = bytearray(s.read(int((bits + 7) // 8)))
     return sum(v << (8 * i) for i, v in enumerate(reversed(blob)))
+
+
+def parse_mpis(s, n):
+    """Parse multiple MPIs from stream."""
+    return [parse_mpi(s) for _ in range(n)]
 
 
 def _parse_nist256p1_verifier(mpi):
@@ -90,7 +94,10 @@ SUPPORTED_CURVES = {
     b'\x2B\x06\x01\x04\x01\xDA\x47\x0F\x01': _parse_ed25519_verifier,
 }
 
-ECDSA_ALGO_IDS = (19, 22)  # (nist256, ed25519)
+RSA_ALGO_IDS = {1, 2, 3}
+ELGAMAL_ALGO_ID = 16
+DSA_ALGO_ID = 17
+ECDSA_ALGO_IDS = {18, 19, 22}  # {ecdsa, nist256, ed25519}
 
 
 def _parse_literal(stream):
@@ -142,8 +149,12 @@ def _parse_signature(stream):
     p['hash_prefix'] = stream.readfmt('2s')
     if p['pubkey_alg'] in ECDSA_ALGO_IDS:
         p['sig'] = (parse_mpi(stream), parse_mpi(stream))
-    else:  # RSA
+    elif p['pubkey_alg'] in RSA_ALGO_IDS:  # RSA
         p['sig'] = (parse_mpi(stream),)
+    elif p['pubkey_alg'] == DSA_ALGO_ID:
+        p['sig'] = (parse_mpi(stream), parse_mpi(stream))
+    else:
+        log.error('unsupported public key algo: %d', p['pubkey_alg'])
 
     assert not stream.read()
     return p
@@ -158,6 +169,7 @@ def _parse_pubkey(stream, packet_type='pubkey'):
         p['created'] = stream.readfmt('>L')
         p['algo'] = stream.readfmt('B')
         if p['algo'] in ECDSA_ALGO_IDS:
+            log.debug('parsing elliptic curve key')
             # https://tools.ietf.org/html/rfc6637#section-11
             oid_size = stream.readfmt('B')
             oid = stream.read(oid_size)
@@ -167,14 +179,25 @@ def _parse_pubkey(stream, packet_type='pubkey'):
             mpi = parse_mpi(stream)
             log.debug('mpi: %x (%d bits)', mpi, mpi.bit_length())
             p['verifier'], p['verifying_key'] = parser(mpi)
-        else:  # RSA
-            n = parse_mpi(stream)
-            e = parse_mpi(stream)
-            log.debug('n: %x (%d bits)', n, n.bit_length())
-            log.debug('e: %x (%d bits)', e, e.bit_length())
+            leftover = stream.read()
+            if leftover:
+                leftover = io.BytesIO(leftover)
+                # https://tools.ietf.org/html/rfc6637#section-8
+                # should be b'\x03\x01\x08\x07': SHA256 + AES128
+                size, = util.readfmt(leftover, 'B')
+                p['kdf'] = leftover.read(size)
+                assert not leftover.read()
+        elif p['algo'] == DSA_ALGO_ID:
+            log.warning('DSA signatures are not verified')
+            parse_mpis(stream, n=4)
+        elif p['algo'] == ELGAMAL_ALGO_ID:
+            log.warning('ElGamal signatures are not verified')
+            parse_mpis(stream, n=3)
+        else:  # assume RSA
+            log.debug('parsing RSA key')
+            n, e = parse_mpis(stream, n=2)
             p['verifier'] = _create_rsa_verifier(n, e)
-
-        assert not stream.read()
+            assert not stream.read()
 
     # https://tools.ietf.org/html/rfc4880#section-12.2
     packet_data = packet.getvalue()
@@ -257,8 +280,12 @@ def load_public_key(stream, use_custom=False):
     digest = digest_packets([pubkey, userid, signature])
     assert signature['hash_prefix'] == digest[:2]
     log.debug('loaded public key "%s"', userid['value'])
-    verify_digest(pubkey=pubkey, digest=digest,
-                  signature=signature['sig'], label='GPG public key')
+    if pubkey.get('verifier'):
+        verify_digest(pubkey=pubkey, digest=digest,
+                      signature=signature['sig'], label='GPG public key')
+    else:
+        log.warning('public key %s cannot be verified!',
+                    util.hexlify(pubkey['key_id']))
 
     packet = pubkey
     while use_custom:
@@ -281,17 +308,6 @@ def load_signature(stream, original_data):
     return signature, digest
 
 
-def load_from_gpg(user_id, use_custom=False):
-    """Load existing GPG public key for `user_id` from local keyring."""
-    args = ['gpg2', '--export'] + ([user_id] if user_id else [])
-    pubkey_bytes = subprocess.check_output(args=args)
-    if pubkey_bytes:
-        return load_public_key(io.BytesIO(pubkey_bytes), use_custom=use_custom)
-    else:
-        log.error('could not find public key %r in local GPG keyring', user_id)
-        raise KeyError(user_id)
-
-
 def verify_digest(pubkey, digest, signature, label):
     """Verify a digest signature from a specified public key."""
     verifier = pubkey['verifier']
@@ -303,17 +319,18 @@ def verify_digest(pubkey, digest, signature, label):
         raise
 
 
-def verify(pubkey, signature, original_data):
-    """Verify correctness of public key and signature."""
-    stream = io.BytesIO(signature)
-
-    # remove GPG armor
+def _remove_armor(armored_data):
+    stream = io.BytesIO(armored_data)
     lines = stream.readlines()[3:-1]
-    data = base64.b64decode(''.join(lines))
+    data = base64.b64decode(b''.join(lines))
     payload, checksum = data[:-3], data[-3:]
     assert util.crc24(payload) == checksum
-    stream = io.BytesIO(payload)
+    return payload
 
+
+def verify(pubkey, signature, original_data):
+    """Verify correctness of public key and signature."""
+    stream = io.BytesIO(_remove_armor(signature))
     signature, digest = load_signature(stream, original_data)
     verify_digest(pubkey=pubkey, digest=digest,
                   signature=signature['sig'], label='GPG signature')

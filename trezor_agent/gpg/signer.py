@@ -1,13 +1,14 @@
 #!/usr/bin/env python
 """Create signatures and export public keys for GPG using TREZOR."""
 import argparse
+import contextlib
 import logging
 import subprocess as sp
 import sys
 import time
 import os
 
-from . import decode, encode
+from . import decode, encode, keyring, proto
 
 log = logging.getLogger(__name__)
 
@@ -15,31 +16,33 @@ log = logging.getLogger(__name__)
 def run_create(args):
     """Generate a new pubkey for a new/existing GPG identity."""
     user_id = os.environ['TREZOR_GPG_USER_ID']
-    s = encode.Signer(user_id=user_id, created=args.time,
-                      curve_name=args.ecdsa_curve)
-    if args.subkey:
-        subkey = s.subkey()
-        primary = sp.check_output(['gpg2', '--export', user_id])
-        result = primary + subkey
-    else:
-        result = s.export()
-    s.close()
+    f = encode.Factory(user_id=user_id, created=args.time,
+                       curve_name=args.ecdsa_curve)
 
-    sys.stdout.write(encode.armor(result, 'PUBLIC KEY BLOCK'))
+    with contextlib.closing(f):
+        if args.subkey:
+            subkey = f.create_subkey()
+            primary = sp.check_output(['gpg2', '--export', user_id])
+            result = primary + subkey
+        else:
+            result = f.create_primary()
+
+    sys.stdout.write(proto.armor(result, 'PUBLIC KEY BLOCK'))
 
 
 def run_sign(args):
     """Generate a GPG signature using hardware-based device."""
-    pubkey = decode.load_from_gpg(user_id=None, use_custom=True)
-    s = encode.Signer.from_public_key(pubkey=pubkey, user_id=pubkey['user_id'])
-    if args.filename:
-        data = open(args.filename, 'rb').read()
-    else:
-        data = sys.stdin.read()
-    sig = s.sign(data)
-    s.close()
+    pubkey = keyring.get_public_key(user_id=None, use_custom=True)
+    f = encode.Factory.from_public_key(pubkey=pubkey,
+                                       user_id=pubkey['user_id'])
+    with contextlib.closing(f):
+        if args.filename:
+            data = open(args.filename, 'rb').read()
+        else:
+            data = sys.stdin.read()
+        sig = f.sign_message(data)
 
-    sig = encode.armor(sig, 'SIGNATURE')
+    sig = proto.armor(sig, 'SIGNATURE').encode('ascii')
     decode.verify(pubkey=pubkey, signature=sig, original_data=data)
 
     filename = '-'  # write to stdout
@@ -61,6 +64,8 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument('-v', '--verbose', action='store_true', default=False)
     subparsers = p.add_subparsers()
+    subparsers.required = True
+    subparsers.dest = 'command'
 
     create = subparsers.add_parser('create')
     create.add_argument('-s', '--subkey', action='store_true', default=False)

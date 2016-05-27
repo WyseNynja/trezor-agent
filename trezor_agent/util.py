@@ -3,7 +3,6 @@ import binascii
 import contextlib
 import io
 import struct
-import time
 
 
 def send(conn, data):
@@ -135,11 +134,6 @@ def readfmt(stream, fmt):
 def prefix_len(fmt, blob):
     """Prefix `blob` with its size, serialized using `fmt` format."""
     return struct.pack(fmt, len(blob)) + blob
-
-
-def time_format(t):
-    """Utility for consistent time formatting."""
-    return time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(t))
 
 
 def hexlify(blob):

@@ -1,12 +1,10 @@
 """SSH-agent implementation using hardware authentication devices."""
 import argparse
-import functools
 import logging
 import os
 import re
 import subprocess
 import sys
-import time
 
 from . import client, formats, protocol, server
 
@@ -31,7 +29,7 @@ def create_parser():
     p = argparse.ArgumentParser()
     p.add_argument('-v', '--verbose', default=0, action='count')
 
-    curve_names = [name.decode('ascii') for name in formats.SUPPORTED_CURVES]
+    curve_names = [name for name in formats.SUPPORTED_CURVES]
     curve_names = ', '.join(sorted(curve_names))
     p.add_argument('-e', '--ecdsa-curve-name', metavar='CURVE',
                    default=formats.CURVE_NIST256,
@@ -103,16 +101,10 @@ def git_host(remote_name, attributes):
             return '{user}@{host}'.format(**match.groupdict())
 
 
-def ssh_sign(conn, label, blob):
-    """Perform SSH signature using given hardware device connection."""
-    now = time.strftime('%Y-%m-%d %H:%M:%S')
-    return conn.sign_ssh_challenge(label=label, blob=blob, visual=now)
-
-
 def run_server(conn, public_key, command, debug, timeout):
     """Common code for run_agent and run_git below."""
     try:
-        signer = functools.partial(ssh_sign, conn=conn)
+        signer = conn.sign_ssh_challenge
         public_key = formats.import_public_key(public_key)
         log.info('using SSH public key: %s', public_key['fingerprint'])
         handler = protocol.Handler(keys=[public_key], signer=signer,
@@ -128,7 +120,7 @@ def run_agent(client_factory=client.Client):
     args = create_agent_parser().parse_args()
     setup_logging(verbosity=args.verbose)
 
-    with client_factory(curve=args.ecdsa_curve_name.encode('ascii')) as conn:
+    with client_factory(curve=args.ecdsa_curve_name) as conn:
         label = args.identity
         command = args.command
 
@@ -156,7 +148,7 @@ def run_git(client_factory=client.Client):
     args = create_git_parser().parse_args()
     setup_logging(verbosity=args.verbose)
 
-    with client_factory(curve=args.ecdsa_curve_name.encode('ascii')) as conn:
+    with client_factory(curve=args.ecdsa_curve_name) as conn:
         label = git_host(args.remote, ['pushurl', 'url'])
         if not label:
             log.error('Could not find "%s" SSH remote in .git/config',
