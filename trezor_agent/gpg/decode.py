@@ -252,12 +252,9 @@ def parse_packets(stream):
         log.debug('packet length: %d', packet_size)
         packet_data = stream.read(packet_size)
         packet_type = PACKET_TYPES.get(tag)
+        assert packet_type is not None, tag
 
-        if packet_type:
-            p = packet_type(util.Reader(io.BytesIO(packet_data)))
-        else:
-            raise ValueError('Unknown packet type: {}'.format(tag))
-
+        p = packet_type(util.Reader(io.BytesIO(packet_data)))
         p['tag'] = tag
         log.debug('packet "%s": %s', p['type'], p)
         yield p
@@ -271,8 +268,9 @@ def digest_packets(packets):
     return hashlib.sha256(data_to_hash.getvalue()).digest()
 
 
-def load_public_key(stream, use_custom=False):
+def load_public_key(pubkey_bytes, use_custom=False):
     """Parse and validate GPG public key from an input stream."""
+    stream = io.BytesIO(pubkey_bytes)
     packets = list(parse_packets(util.Reader(stream)))
     pubkey, userid, signature = packets[:3]
     packets = packets[3:]
@@ -316,10 +314,11 @@ def verify_digest(pubkey, digest, signature, label):
         log.debug('%s is OK', label)
     except ecdsa.keys.BadSignatureError:
         log.error('Bad %s!', label)
-        raise
+        raise ValueError('Invalid ECDSA signature for {}'.format(label))
 
 
-def _remove_armor(armored_data):
+def remove_armor(armored_data):
+    """Decode armored data into its binary form."""
     stream = io.BytesIO(armored_data)
     lines = stream.readlines()[3:-1]
     data = base64.b64decode(b''.join(lines))
@@ -330,7 +329,7 @@ def _remove_armor(armored_data):
 
 def verify(pubkey, signature, original_data):
     """Verify correctness of public key and signature."""
-    stream = io.BytesIO(_remove_armor(signature))
+    stream = io.BytesIO(remove_armor(signature))
     signature, digest = load_signature(stream, original_data)
     verify_digest(pubkey=pubkey, digest=digest,
                   signature=signature['sig'], label='GPG signature')
